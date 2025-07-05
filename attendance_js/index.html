@@ -114,6 +114,7 @@
           select.appendChild(opt);
         });
       }
+
       function hideAllForms() {
         document.getElementById("newPersonForm").style.display = "none";
         document.getElementById("updatePersonForm").style.display = "none";
@@ -134,70 +135,97 @@
         google.script.run.withSuccessHandler(handleSearchResults)
           .searchAttendance(query);
       }
-      function handleSearchResults(results) {
-        var resultsTable = document.getElementById("resultsTable");
-        resultsTable.innerHTML = "";
-        // Define header row (showing only selected columns).
-        var headers = ["ID", "Name", "Date", "Status", "Cell Group", "Ministry", "Last Service Attended", "Action"];
-        var headerRow = document.createElement("tr");
-        headers.forEach(function(text) {
-          var th = document.createElement("th");
-          th.innerText = text;
-          headerRow.appendChild(th);
-        });
-        resultsTable.appendChild(headerRow);
-        
-        // We display indices: 0,1,2,3,4,5,13 from the full record.
-        var indicesToShow = [0, 1, 2, 3, 4, 5, 13];
-        var today = new Date().toISOString().slice(0,10);
-        if(results.length === 0) {
-          alert("No matching record found. Please register the new person.");
-          document.getElementById("newName").value = document.getElementById("searchName").value.trim();
-          document.getElementById("newPersonForm").style.display = "block";
-          return;
-        }
-        results.forEach(function(row) {
-          var tr = document.createElement("tr");
-          indicesToShow.forEach(function(i) {
-            var td = document.createElement("td");
-            td.innerText = row[i];
-            tr.appendChild(td);
-          });
-          var actionTd = document.createElement("td");
-          
-          // "Mark Attendance" button – turns green if attendance already marked today.
-          var markButton = document.createElement("button");
-          markButton.innerText = "Mark Attendance";
-          markButton.onclick = function(){ openAttendanceForm(row[0], row[1]); };
-          if(row[13] === today){
-            markButton.style.backgroundColor = "green";
-          }
-          actionTd.appendChild(markButton);
-          actionTd.appendChild(document.createTextNode(" "));
-          
-          // "Update" button.
-          var updateButton = document.createElement("button");
-          updateButton.innerText = "Update";
-          updateButton.onclick = function(){ showUpdateForm(row); };
-          actionTd.appendChild(updateButton);
-          actionTd.appendChild(document.createTextNode(" "));
-          
-          // "Display Details" button.
-          var detailsButton = document.createElement("button");
-          detailsButton.innerText = "Display Details";
-          detailsButton.onclick = function(){ displayDetails(row); };
-          actionTd.appendChild(detailsButton);
-          
-          tr.appendChild(actionTd);
-          resultsTable.appendChild(tr);
-        });
+
+    /**
+     * RENDERS THE SEARCH RESULTS TABLE
+     * — Grays out & disables “Mark Attendance” if last-service = today
+     */
+    function handleSearchResults(results) {
+      var resultsTable = document.getElementById("resultsTable");
+      resultsTable.innerHTML = "";
+
+      // --- header row (unchanged) ---
+      var headers = [
+        "ID","Name","Date","Status",
+       "Cell Group","Ministry",
+        "Last Service Attended","Action"
+      ];
+      var hr = document.createElement("tr");
+      headers.forEach(function(h){
+       var th = document.createElement("th");
+       th.innerText = h;
+       hr.appendChild(th);
+      });
+      resultsTable.appendChild(hr);
+
+      if (results.length === 0) {
+        alert("No matching record found. Please register the new person.");
+        document.getElementById("newName").value =
+        document.getElementById("searchName").value.trim();
+        document.getElementById("newPersonForm").style.display = "block";
+        return;
       }
-      
+
+      var colsToShow = [0,1,2,3,4,5,13];
+      var today      = new Date().toISOString().slice(0,10);
+
+      results.forEach(function(row){
+      var tr = document.createElement("tr");
+      colsToShow.forEach(function(i){
+      var td = document.createElement("td");
+      td.innerText = row[i] || "";
+      tr.appendChild(td);
+      });
+
+      var actionTd = document.createElement("td");
+
+      // — Mark Attendance
+     var markBtn = document.createElement("button");
+     markBtn.innerText = "Mark Attendance";
+     var lastDate = "";
+     if (row[13]) {
+       var d = new Date(row[13]);
+       lastDate = isNaN(d)
+         ? row[13].toString().slice(0,10)
+         : d.toISOString().slice(0,10);
+       if (lastDate === today) {
+         markBtn.style.backgroundColor = "gray";
+       }
+      }
+      markBtn.onclick = function(){
+      openAttendanceForm(row[0], row[1]);
+      };
+      actionTd.appendChild(markBtn);
+
+      // — Unmark Attendance button (always shown if any date exists)
+      var unmarkBtn = document.createElement("button");
+      unmarkBtn.innerText = "Unmark Attendance";
+      unmarkBtn.style.marginLeft = "6px";
+      // show date-picker form on click
+      unmarkBtn.onclick = function(){
+        openUnmarkAttendanceForm(row[0]);
+      };
+      actionTd.appendChild(unmarkBtn);
+
+
+       // — Update & Display Details (unchanged)
+       var upd = document.createElement("button");
+       upd.innerText = "Update";
+       upd.onclick = function(){ showUpdateForm(row); };
+       actionTd.appendChild(upd);
+
+       var det = document.createElement("button");
+       det.innerText = "Display Details";
+       det.onclick = function(){ displayDetails(row); };
+       actionTd.appendChild(det);
+
+       tr.appendChild(actionTd);
+       resultsTable.appendChild(tr);
+      });
+   }
+
       // DISPLAY DETAILS (READ-ONLY) FORM
       function displayDetails(row) {
-        // Fill all desired fields from the full record:
-        // [0]=ID, [1]=Name, [2]=Date, [3]=Status, [4]=Cell Group, [5]=Ministry, [6]=Baptized,
-        // [7]=Disciple 1, [8]=Disciple 2, [9]=Disciple 3, [10]=Bible Literacy, [11]=Financial Literacy, [12]=Teaching Class
         document.getElementById("displayId").value = row[0];
         document.getElementById("displayName").value = row[1];
         document.getElementById("displayDate").value = row[2];
@@ -216,7 +244,7 @@
       function closeDisplayDetails() {
         document.getElementById("displayDetailsForm").style.display = "none";
       }
-      
+
       // ATTENDANCE FORM
       function openAttendanceForm(id, name) {
         document.getElementById("attendanceId").value = id;
@@ -242,7 +270,7 @@
       function cancelAttendance() {
         document.getElementById("attendanceDateForm").style.display = "none";
       }
-      
+
       // MOBILE FIELD TOGGLE (for both New and Update forms)
       function toggleMobileField(formPrefix) {
         var statusElem = document.getElementById(formPrefix + "Status");
@@ -258,7 +286,62 @@
           }
         }
       }
-      
+      /**
+      * Launches the form, pulls that person’s attendance dates.
+      */
+      function openUnmarkAttendanceForm(id) {
+        document.getElementById("unmarkId").value = id;
+        var sel = document.getElementById("unmarkDate");
+        sel.innerHTML = ""; 
+        document.getElementById("unmarkAttendanceForm").style.display = "block";
+        google.script
+          .run
+          .withSuccessHandler(function(dates) {
+            if (!dates.length) {
+              alert("No attendance dates found to unmark.");
+              cancelUnmark();
+              return;
+            }
+            dates.forEach(function(dt) {
+              var opt = document.createElement("option");
+              opt.value = dt; opt.innerText = dt;
+              sel.appendChild(opt);
+            });
+          })
+          .getAttendanceDates(id);
+      }
+
+      /**
+      * Calls the server to unmark the chosen date.
+      */
+      function submitUnmark() {
+        var id   = document.getElementById("unmarkId").value;
+        var date = document.getElementById("unmarkDate").value;
+        if (!date)       { alert("Please select a date."); return; }
+        if (!confirm("Remove attendance for " + date + "?")) return;
+
+        // Call server, then refresh the results table  
+        google.script
+          .run
+          .withSuccessHandler(function(resp) {
+            alert(resp);
+            // 1) Hide the unmark form  
+            document.getElementById("unmarkAttendanceForm").style.display = "none";
+            // 2) Re-fire the search to rebuild the results table
+            searchAttendance();
+          })
+          .unmarkAttendance(id, date);
+      }
+
+
+      /**
+      * Cancels and hides the unmark form.
+      */
+      function cancelUnmark() {
+        document.getElementById("unmarkAttendanceForm").style.display = "none";
+      }
+
+
       // NEW PERSON REGISTRATION
       function addNewPersonRecord() {
         var name = document.getElementById("newName").value.trim();
@@ -297,16 +380,18 @@
           document.getElementById("newPersonForm").style.display = "none";
           document.getElementById("searchName").value = "";
           document.getElementById("resultsTable").innerHTML = "";
-        }).addNewPerson(name, date, status, cellGroup, ministry, baptized, discipleship1, discipleship2, discipleship3, bibleLiteracy, financialLiteracy, teachingClass, mobile_number);
+        }).addNewPerson(
+          name, date, status, cellGroup, ministry,
+          baptized, discipleship1, discipleship2, discipleship3,
+          bibleLiteracy, financialLiteracy, teachingClass, mobile_number
+        );
       }
       function cancelNewPerson() {
         document.getElementById("newPersonForm").style.display = "none";
       }
-      
+
       // UPDATE PERSON RECORD (Edit)
       function showUpdateForm(row) {
-        // Use the full record: [0]=ID, [1]=Name, [2]=Date, [3]=Status, [4]=Cell Group, [5]=Ministry, [6]=Baptized,
-        // [7]=Disciple 1, [8]=Disciple 2, [9]=Disciple 3, [10]=Bible Literacy, [11]=Financial Literacy, [12]=Teaching Class, [13]=Last Service, [14]=Mobile_number
         document.getElementById("updateId").value = row[0];
         document.getElementById("updateName").value = row[1];
         document.getElementById("updateDate").value = row[2];
@@ -332,7 +417,8 @@
         var status = document.getElementById("updateStatus").value;
         var cellGroup = document.getElementById("updateCellGroup").value;
         var ministry = document.getElementById("updateMinistry").value;
-        var baptized = document.getElementById("updateBaptized").value;
+        var baptized = document.getElementById("updateBaptized").
+value;
         var discipleship1 = document.getElementById("updateDiscipleship1").value;
         var discipleship2 = document.getElementById("updateDiscipleship2").value;
         var discipleship3 = document.getElementById("updateDiscipleship3").value;
@@ -350,12 +436,16 @@
           document.getElementById("updatePersonForm").style.display = "none";
           document.getElementById("searchName").value = "";
           document.getElementById("resultsTable").innerHTML = "";
-        }).updatePersonRecord(id, name, date, status, cellGroup, ministry, baptized, discipleship1, discipleship2, discipleship3, bibleLiteracy, financialLiteracy, teachingClass, mobile_number);
+        }).updatePersonRecord(
+          id, name, date, status, cellGroup, ministry,
+          baptized, discipleship1, discipleship2, discipleship3,
+          bibleLiteracy, financialLiteracy, teachingClass, mobile_number
+        );
       }
       function cancelUpdate() {
         document.getElementById("updatePersonForm").style.display = "none";
       }
-      
+
       // REPORT GENERATION FUNCTIONS
       function showReportForm() {
         hideAllForms();
@@ -393,7 +483,7 @@
         }
         document.getElementById("reportForm").style.display = "none";
       }
-      
+
       // DATA EXTRACTION FUNCTIONS
       function showExtractDataForm() {
         hideAllForms();
@@ -505,19 +595,19 @@
     <button id="scanQrButton" onclick="startQrScan()">Scan QR Code</button>
     <button id="stopQrButton" onclick="stopQrScan()" style="display:none;">Stop QR Scan</button>
     <div id="qr-reader" style="width:300px; margin-top:10px; display:none;"></div>
-    
+
     <h3>Search Results</h3>
     <table id="resultsTable"></table>
-    
+
     <!-- New Person Registration Form -->
     <div id="newPersonForm" class="formContainer" style="display:none;">
       <h3>Register New Person</h3>
       <label for="newName">Name:</label>
       <input type="text" id="newName" placeholder="Enter full name"><br><br>
-      
+
       <label for="newDate">Date:</label>
       <input type="date" id="newDate"><br><br>
-      
+
       <label for="newStatus">Status:</label>
       <select id="newStatus" onchange="toggleMobileField('new')">
         <option value="Active">Active</option>
@@ -525,74 +615,74 @@
         <option value="One-time visitor" selected>One-time visitor</option>
         <option value="For follow-up">For follow-up</option>
       </select><br><br>
-      
+
       <div id="newMobileNumberDiv" style="display:block;">
         <label for="newMobileNumber">Mobile Number:</label>
         <input type="text" id="newMobileNumber" placeholder="Enter mobile number">
       </div>
-      
+
       <label for="cellGroup">Cell Group:</label>
       <select id="cellGroup"></select><br><br>
-      
+
       <label for="ministry">Ministry:</label>
       <select id="ministry"></select><br><br>
-      
+
       <label for="baptized">Baptized:</label>
       <select id="baptized">
         <option value="No" selected>No</option>
         <option value="Yes">Yes</option>
       </select><br><br>
-      
+
       <label for="discipleship1">Discipleship 1:</label>
       <select id="discipleship1">
         <option value="No" selected>No</option>
         <option value="Yes">Yes</option>
       </select><br><br>
-      
+
       <label for="discipleship2">Discipleship 2:</label>
       <select id="discipleship2">
         <option value="No" selected>No</option>
         <option value="Yes">Yes</option>
       </select><br><br>
-      
+
       <label for="discipleship3">Discipleship 3:</label>
       <select id="discipleship3">
         <option value="No" selected>No</option>
         <option value="Yes">Yes</option>
       </select><br><br>
-      
+
       <label for="bibleLiteracy">Bible Literacy:</label>
       <select id="bibleLiteracy">
         <option value="No" selected>No</option>
         <option value="Yes">Yes</option>
       </select><br><br>
-      
+
       <label for="financialLiteracy">Financial Literacy:</label>
       <select id="financialLiteracy">
         <option value="No" selected>No</option>
         <option value="Yes">Yes</option>
       </select><br><br>
-      
+
       <label for="teachingClass">Teaching Class:</label>
       <select id="teachingClass">
         <option value="No" selected>No</option>
         <option value="Yes">Yes</option>
       </select><br><br>
-      
+
       <button onclick="addNewPersonRecord()">OK</button>
       <button onclick="cancelNewPerson()">Cancel</button>
     </div>
-    
+
     <!-- Update Person Form -->
     <div id="updatePersonForm" class="formContainer" style="display:none;">
       <h3>Update Person Record</h3>
       <input type="hidden" id="updateId">
       <label for="updateName">Name:</label>
       <input type="text" id="updateName" placeholder="Enter full name"><br><br>
-      
+
       <label for="updateDate">Date:</label>
       <input type="date" id="updateDate"><br><br>
-      
+
       <label for="updateStatus">Status:</label>
       <select id="updateStatus" onchange="toggleMobileField('update')">
         <option value="Active">Active</option>
@@ -600,64 +690,64 @@
         <option value="One-time visitor">One-time visitor</option>
         <option value="For follow-up">For follow-up</option>
       </select><br><br>
-      
+
       <div id="updateMobileNumberDiv" style="display:none;">
         <label for="updateMobileNumber">Mobile Number:</label>
         <input type="text" id="updateMobileNumber" placeholder="Enter mobile number">
       </div>
-      
+
       <label for="updateCellGroup">Cell Group:</label>
       <select id="updateCellGroup"></select><br><br>
-      
+
       <label for="updateMinistry">Ministry:</label>
       <select id="updateMinistry"></select><br><br>
-      
+
       <label for="updateBaptized">Baptized:</label>
       <select id="updateBaptized">
         <option value="No" selected>No</option>
         <option value="Yes">Yes</option>
       </select><br><br>
-      
+
       <label for="updateDiscipleship1">Discipleship 1:</label>
       <select id="updateDiscipleship1">
         <option value="No" selected>No</option>
         <option value="Yes">Yes</option>
       </select><br><br>
-      
+
       <label for="updateDiscipleship2">Discipleship 2:</label>
       <select id="updateDiscipleship2">
         <option value="No" selected>No</option>
         <option value="Yes">Yes</option>
       </select><br><br>
-      
+
       <label for="updateDiscipleship3">Discipleship 3:</label>
       <select id="updateDiscipleship3">
         <option value="No" selected>No</option>
         <option value="Yes">Yes</option>
       </select><br><br>
-      
+
       <label for="updateBibleLiteracy">Bible Literacy:</label>
       <select id="updateBibleLiteracy">
         <option value="No" selected>No</option>
         <option value="Yes">Yes</option>
       </select><br><br>
-      
+
       <label for="updateFinancialLiteracy">Financial Literacy:</label>
       <select id="updateFinancialLiteracy">
         <option value="No" selected>No</option>
         <option value="Yes">Yes</option>
       </select><br><br>
-      
+
       <label for="updateTeachingClass">Teaching Class:</label>
       <select id="updateTeachingClass">
         <option value="No" selected>No</option>
         <option value="Yes">Yes</option>
       </select><br><br>
-      
+
       <button onclick="updatePersonRecordClient()">Update</button>
       <button onclick="cancelUpdate()">Cancel</button>
     </div>
-    
+
     <!-- Attendance Date Selector Form -->
     <div id="attendanceDateForm" class="formContainer" style="display:none;">
       <h3>Mark Attendance</h3>
@@ -668,7 +758,7 @@
       <button onclick="submitAttendance()">Submit</button>
       <button onclick="cancelAttendance()">Cancel</button>
     </div>
-    
+
     <!-- Generate Report Form -->
     <div id="reportForm" class="formContainer" style="display:none;">
       <h3>Generate Report</h3>
@@ -677,23 +767,23 @@
         <option value="year">By Year</option>
         <option value="range">Date Range</option>
       </select><br><br>
-      
+
       <div id="yearContainer">
         <label for="reportYear">Year:</label>
         <input type="number" id="reportYear" placeholder="e.g., 2025"><br><br>
       </div>
-      
+
       <div id="rangeContainer" style="display:none;">
         <label for="reportStartDate">Start Date:</label>
         <input type="date" id="reportStartDate"><br><br>
         <label for="reportEndDate">End Date:</label>
         <input type="date" id="reportEndDate"><br><br>
       </div>
-      
+
       <button onclick="submitReport()">Download Report</button>
       <button onclick="cancelReport()">Cancel</button>
     </div>
-    
+
     <!-- Extract Person's Data Form -->
     <div id="extractDataForm" class="formContainer" style="display:none;">
       <h3>Extract Person's Data</h3>
@@ -705,7 +795,7 @@
         <option value="ministry">By Ministry</option>
         <option value="date">By Date Range</option>
       </select><br><br>
-      
+
       <div id="extractStatusContainer" style="display:none;">
         <label for="extractStatus">Status:</label>
         <select id="extractStatus">
@@ -715,28 +805,28 @@
           <option value="For follow-up">For follow-up</option>
         </select><br><br>
       </div>
-      
+
       <div id="extractCellGroupContainer" style="display:none;">
         <label for="extractCellGroup">Cell Group:</label>
         <select id="extractCellGroup"></select><br><br>
       </div>
-      
+
       <div id="extractMinistryContainer" style="display:none;">
         <label for="extractMinistry">Ministry:</label>
         <select id="extractMinistry"></select><br><br>
       </div>
-      
+
       <div id="extractDateContainer" style="display:none;">
         <label for="extractStartDate">Start Date:</label>
         <input type="date" id="extractStartDate"><br><br>
         <label for="extractEndDate">End Date:</label>
         <input type="date" id="extractEndDate"><br><br>
       </div>
-      
+
       <button onclick="submitExtractData()">Download Data</button>
       <button onclick="cancelExtractDataForm()">Cancel</button>
     </div>
-    
+
     <!-- Display Details Form (Read-Only) -->
     <div id="displayDetailsForm" class="formContainer" style="display:none;">
       <h3>Person Details</h3>
@@ -784,6 +874,15 @@
       <input type="text" id="displayTeachingClass" disabled><br><br>
       
       <button onclick="closeDisplayDetails()">Close</button>
+    </div>
+    <!-- Unmark Attendance Form -->
+    <div id="unmarkAttendanceForm" class="formContainer" style="display:none;">
+      <h3>Unmark Attendance</h3>
+      <input type="hidden" id="unmarkId">
+      <label for="unmarkDate">Select Date to Remove:</label>
+      <select id="unmarkDate"></select><br><br>
+      <button onclick="submitUnmark()">OK</button>
+      <button onclick="cancelUnmark()">Cancel</button>
     </div>
   </body>
 </html>

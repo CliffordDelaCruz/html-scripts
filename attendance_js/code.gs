@@ -1,6 +1,5 @@
 /**
- * Serves the HTML web interface using a templated HTML file so that
- * included files (such as CSS) are properly processed.
+ * Serves the HTML web interface using a templated HTML file.
  */
 function doGet() {
   var template = HtmlService.createTemplateFromFile('index');
@@ -29,37 +28,55 @@ function getNextId(sheet) {
 /**
  * Inserts a new record into the "Person_Master" sheet.
  * New logic:
- *  - Inserts 15 columns: the mobile number is stored in column 15.
- *  - Copies the date field to the Last_Service_Attended_Date (column 14).
- *  - Automatically marks attendance.
+ *  - Leaves Last_Service_Attended_Date blank on insert.
+ *  - Calls markAttendance() to write both the attendance row and update col 14.
  */
-function addNewPerson(name, date, status, cellGroup, ministry, baptized, discipleship1, discipleship2, discipleship3, bibleLiteracy, financialLiteracy, teachingClass, mobile_number) {
+function addNewPerson(
+    name, date, status, cellGroup, ministry,
+    baptized, discipleship1, discipleship2, discipleship3,
+    bibleLiteracy, financialLiteracy, teachingClass, mobile_number
+) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName("Person_Master");
   if (!sheet) return "Error: 'Person_Master' sheet not found.";
   
   var newId = getNextId(sheet);
+  
   // Append a new row with 15 columns:
-  // [ID, Name, Date, Status, Cell Group, Ministry, Baptized, Disciple 1, Disciple 2, Disciple 3,
-  //  Bible Literacy, Financial Literacy, Teaching Class, Last_Service_Attended_Date, Mobile_number]
-  sheet.appendRow([newId, name, date, status, cellGroup, ministry, baptized, discipleship1, discipleship2, discipleship3, bibleLiteracy, financialLiteracy, teachingClass, date, mobile_number]);
+  // [ID, Name, Date, Status, CellGroup, Ministry, Baptized,
+  //  Disciple1, Disciple2, Disciple3, BibleLit, FinLit, TeachClass,
+  //  Last_Service_Attended_Date (blank), Mobile_number]
+  sheet.appendRow([
+    newId,
+    name,
+    date,
+    status,
+    cellGroup,
+    ministry,
+    baptized,
+    discipleship1,
+    discipleship2,
+    discipleship3,
+    bibleLiteracy,
+    financialLiteracy,
+    teachingClass,
+    "",               // ← leave Last_Service_Attended_Date blank
+    mobile_number
+  ]);
   
   var lastRow = sheet.getLastRow();
-  // Format columns as needed
   sheet.getRange(lastRow, 1).setNumberFormat("0");
   sheet.getRange(lastRow, 3).setNumberFormat("@");
   sheet.getRange(lastRow, 14).setNumberFormat("@");
   
-  // Automatically create an attendance record.
-  markAttendance(newId, name, date);
-  
-  return "New person added with ID: " + newId;
+  // Now create an attendance record AND update Last_Service_Attended_Date
+  var markResponse = markAttendance(newId, name, date);
+  return "New person added with ID: " + newId + " — " + markResponse;
 }
 
 /**
  * Searches the "Person_Master" sheet for records matching the given name.
- * Performs a case‑insensitive, partial match in Column B.
- * Returns all 15 columns.
+ * Case-insensitive, partial match in Column B. Returns full 15-col rows.
  */
 function searchAttendance(name) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -69,7 +86,6 @@ function searchAttendance(name) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
   
-  // Now includes 15 columns (the last is Mobile_number)
   var data = sheet.getRange(2, 1, lastRow - 1, 15).getValues();
   var results = [];
   var searchTerm = name.toString().toLowerCase().trim();
@@ -83,13 +99,14 @@ function searchAttendance(name) {
 }
 
 /**
- * Updates an existing record in the "Person_Master" sheet.
- * Updates columns 1–13 and mobile number (column 15) while
- * preserving the existing Last_Service_Attended_Date (column 14).
- * Enforces PDPA: if status is not "One-time visitor" or "For follow-up",
- * the mobile number is cleared.
+ * Updates an existing record in "Person_Master". Preserves col 14,
+ * enforces PDPA on mobile number, then writes back.
  */
-function updatePersonRecord(id, name, date, status, cellGroup, ministry, baptized, discipleship1, discipleship2, discipleship3, bibleLiteracy, financialLiteracy, teachingClass, mobile_number) {
+function updatePersonRecord(
+    id, name, date, status, cellGroup, ministry,
+    baptized, discipleship1, discipleship2, discipleship3,
+    bibleLiteracy, financialLiteracy, teachingClass, mobile_number
+) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName("Person_Master");
   if (!sheet) return "Error: 'Person_Master' sheet not found.";
@@ -100,23 +117,27 @@ function updatePersonRecord(id, name, date, status, cellGroup, ministry, baptize
   var existingLastServiceDate = "";
   for (var i = 0; i < data.length; i++) {
     if (data[i][0] == id) {
-      targetRow = i + 2; // Adjust for header row.
+      targetRow = i + 2;
       existingLastServiceDate = data[i][13];
       break;
     }
   }
   if (targetRow === -1) return "Error: Record with ID " + id + " not found.";
   
-  // PDPA Rule: Only retain mobile_number if status is "One-time visitor" or "For follow-up"
+  // PDPA: clear mobile if not visitor/follow-up
   if (status !== "One-time visitor" && status !== "For follow-up") {
     mobile_number = "";
   }
   
-  // Update columns 1–13 (basic info)
-  sheet.getRange(targetRow, 1, 1, 13).setValues([[id, name, date, status, cellGroup, ministry, baptized, discipleship1, discipleship2, discipleship3, bibleLiteracy, financialLiteracy, teachingClass]]);
-  // Reinstate the existing value for Last_Service_Attended_Date (column 14)
+  // Write cols 1–13
+  sheet.getRange(targetRow, 1, 1, 13).setValues([[
+    id, name, date, status, cellGroup,
+    ministry, baptized, discipleship1, discipleship2, discipleship3,
+    bibleLiteracy, financialLiteracy, teachingClass
+  ]]);
+  
+  // Reinstate existing Last_Service_Attended_Date
   sheet.getRange(targetRow, 14).setValue(existingLastServiceDate);
-  // Update Mobile_number (column 15)
   sheet.getRange(targetRow, 15).setValue(mobile_number);
   
   sheet.getRange(targetRow, 1).setNumberFormat("0");
@@ -127,31 +148,28 @@ function updatePersonRecord(id, name, date, status, cellGroup, ministry, baptize
 }
 
 /**
- * Marks attendance by appending a record into the "Attendance_Table" sheet.
- * Also updates the Last_Service_Attended_Date in Person_Master.
- * BEFORE inserting a new attendance record, the function checks if the selected date
- * matches the current Last_Service_Attended_Date. If so, it returns a message and does not insert.
+ * Marks attendance by appending to "Attendance_Table" and updating
+ * Last_Service_Attended_Date in Person_Master.
+ * Prevents duplicate marks for the same date.
  */
 function markAttendance(id, name, date) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var attSheet = ss.getSheetByName("Attendance_Table");
+  var pmSheet  = ss.getSheetByName("Person_Master");
   if (!attSheet) return "Error: 'Attendance_Table' sheet not found.";
+  if (!pmSheet)  return "Error: 'Person_Master' sheet not found.";
   
-  // Get the Person_Master record for the given id.
-  var pmSheet = ss.getSheetByName("Person_Master");
-  if (!pmSheet) return "Error: 'Person_Master' sheet not found.";
-  
-  var lastRowPM = pmSheet.getLastRow();
-  var pmData = pmSheet.getRange(2, 1, lastRowPM - 1, 15).getValues();
+  // Look up Person_Master for this ID
+  var pmData = pmSheet.getRange(2, 1, pmSheet.getLastRow() - 1, 15).getValues();
   var recordFound = false;
   for (var i = 0; i < pmData.length; i++) {
     if (pmData[i][0] == id) {
       recordFound = true;
-      // Check if attendance has already been marked for the selected date.
+      // If already marked today, abort
       if (pmData[i][13] && pmData[i][13].toString() === date) {
-        return "Attendance has already been marked for " + date;
+        return "Attendance already marked for " + date;
       }
-      // Otherwise, update Last_Service_Attended_Date to the new date.
+      // Update Last_Service_Attended_Date (col 14)
       pmSheet.getRange(i + 2, 14).setValue(date);
       pmSheet.getRange(i + 2, 14).setNumberFormat("@");
       break;
@@ -159,51 +177,117 @@ function markAttendance(id, name, date) {
   }
   if (!recordFound) return "Error: Record not found in Person_Master.";
   
+  // Append to Attendance_Table: [ID, Name, Year, Date]
   var year = date ? date.substring(0, 4) : "";
   attSheet.appendRow([id, name, year, date]);
-  
   var attLastRow = attSheet.getLastRow();
   attSheet.getRange(attLastRow, 1).setNumberFormat("0");
   attSheet.getRange(attLastRow, 4).setNumberFormat("@");
   
-  return "Attendance recorded successfully!";
+  return "Attendance recorded successfully for " + date;
 }
 
 /**
- * Retrieves a list of cell group names from the "Cell_group_master" sheet.
+ * Returns a sorted, de-duplicated list of YYYY-MM-DD attendance dates
+ * for the given person ID.
+ */
+function getAttendanceDates(id) {
+  var ss       = SpreadsheetApp.getActiveSpreadsheet();
+  var attSheet = ss.getSheetByName("Attendance_Table");
+  if (!attSheet) return [];
+  var data = attSheet.getRange(2,1, attSheet.getLastRow()-1, 4).getValues();
+  var dates = data
+    .filter(r => r[0] == id && r[3])
+    .map(r => new Date(r[3]).toISOString().slice(0,10))
+    // unique
+    .filter((v, i, a) => a.indexOf(v) === i)
+    // newest first
+    .sort((a,b) => b.localeCompare(a));
+  return dates;
+}
+
+/**
+ * Deletes attendance record(s) for id & date.
+ * If un‐marked date===today, blanks out Last_Service_Attended_Date.
+ * Otherwise, back‐fills it to the next‐most‐recent date.
+ */
+function unmarkAttendance(id, date) {
+  var ss       = SpreadsheetApp.getActiveSpreadsheet();
+  var attSheet = ss.getSheetByName("Attendance_Table");
+  var pmSheet  = ss.getSheetByName("Person_Master");
+  if (!attSheet || !pmSheet) return "Error: Required sheet missing.";
+
+  // 1) delete all matching rows in Attendance_Table
+  var attData = attSheet.getRange(2,1, attSheet.getLastRow()-1, 4).getValues();
+  var rowsToRemove = [];
+  attData.forEach(function(r,i) {
+    if (r[0] == id && new Date(r[3]).toISOString().slice(0,10) === date) {
+      rowsToRemove.push(i+2); // +2 for header offset
+    }
+  });
+  if (!rowsToRemove.length) {
+    return "No attendance record for ID " + id + " on " + date;
+  }
+  // delete from bottom up
+  rowsToRemove.reverse().forEach(function(rowNum) {
+    attSheet.deleteRow(rowNum);
+  });
+
+  // 2) recompute Last_Service_Attended_Date
+  var remaining = getAttendanceDates(id); // newest first
+  var newLast;
+  var today = new Date().toISOString().slice(0,10);
+  if (date === today) {
+    // user removed today → blank it
+    newLast = "";
+  } else {
+    // either leave as-is (if not today) or back-fill
+    newLast = remaining.length ? remaining[0] : "";
+  }
+
+  // write back to Person_Master
+  var pmData = pmSheet.getRange(2,1, pmSheet.getLastRow()-1, 15).getValues();
+  for (var i=0; i<pmData.length; i++) {
+    if (pmData[i][0] == id) {
+      pmSheet.getRange(i+2, 14).setValue(newLast);
+      pmSheet.getRange(i+2, 14).setNumberFormat("@");
+      break;
+    }
+  }
+  return "Attendance unmarked for " + date;
+}
+
+
+/**
+ * Retrieves list of cell groups from "Cell_group_master".
  */
 function getCellGroupList() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName("Cell_group_master");
   if (!sheet) return [];
-  
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
-  
-  var data = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-  return data.map(function(row) { return row[0]; });
+  return sheet.getRange(2, 1, lastRow - 1, 1)
+              .getValues()
+              .map(function(r){ return r[0]; });
 }
 
 /**
- * Retrieves a list of ministry names from the "Ministry_master" sheet.
+ * Retrieves list of ministries from "Ministry_master".
  */
 function getMinistryList() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName("Ministry_master");
   if (!sheet) return [];
-  
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
-  
-  var data = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-  return data.map(function(row) { return row[0]; });
+  return sheet.getRange(2, 1, lastRow - 1, 1)
+              .getValues()
+              .map(function(r){ return r[0]; });
 }
 
 /**
- * Generates a report based on the specified criteria from Attendance_Table.
- * For reportType "year": filters by the given year.
- * For reportType "range": filters by a date range.
- * Returns an XLSX export URL.
+ * Generates an XLSX attendance report, filtered by year or date range.
  */
 function generateReport(reportType, year, startDate, endDate) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -217,44 +301,35 @@ function generateReport(reportType, year, startDate, endDate) {
   var filtered = [];
   
   if (reportType === "year") {
-    filtered = data.filter(function(row) {
-      return parseInt(row[2], 10) === parseInt(year, 10);
+    filtered = data.filter(function(r) {
+      return parseInt(r[2], 10) === parseInt(year, 10);
     });
   } else if (reportType === "range") {
-    var start = new Date(startDate);
-    var end = new Date(endDate);
-    end.setHours(23, 59, 59, 999);
-    filtered = data.filter(function(row) {
-      var recordDate = new Date(row[3]);
-      return recordDate >= start && recordDate <= end;
+    var s = new Date(startDate), e = new Date(endDate);
+    e.setHours(23,59,59,999);
+    filtered = data.filter(function(r) {
+      var d = new Date(r[3]);
+      return d >= s && d <= e;
     });
   }
   
   if (filtered.length === 0) return "No records match the selected criteria.";
   
-  var reportSpreadsheet = SpreadsheetApp.create("Attendance Report - " + new Date().toLocaleString());
-  var reportSheet = reportSpreadsheet.getActiveSheet();
+  // Build & share a new spreadsheet
+  var reportSS = SpreadsheetApp.create("Attendance Report - " + new Date().toLocaleString());
+  var reportSh = reportSS.getActiveSheet();
+  reportSh.appendRow(sheet.getRange(1, 1, 1, 4).getValues()[0]);
+  filtered.forEach(function(r){ reportSh.appendRow(r); });
   
-  // Append header row.
-  var header = sheet.getRange(1, 1, 1, 4).getValues()[0];
-  reportSheet.appendRow(header);
-  
-  filtered.forEach(function(row) {
-    reportSheet.appendRow(row);
-  });
-  
-  var file = DriveApp.getFileById(reportSpreadsheet.getId());
+  var file = DriveApp.getFileById(reportSS.getId());
   file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-  
-  var fileId = reportSpreadsheet.getId();
-  var downloadUrl = "https://docs.google.com/spreadsheets/d/" + fileId + "/export?format=xlsx";
-  return downloadUrl;
+  return "https://docs.google.com/spreadsheets/d/" 
+         + reportSS.getId() + "/export?format=xlsx";
 }
 
 /**
- * Extracts person data from the "Person_Master" sheet based on the provided filter.
- * Filter types include: "status", "cellgroup", "ministry", or "date".
- * Returns an XLSX download URL including all columns.
+ * Extracts person data from Person_Master by various filters.
+ * Returns an XLSX download URL.
  */
 function extractPersonData(filterType, filterValue, startDate, endDate) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -265,30 +340,22 @@ function extractPersonData(filterType, filterValue, startDate, endDate) {
   if (lastRow < 2) return "No records found.";
   
   var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  var data = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+  var data   = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn())
+                    .getValues();
   var filtered = [];
   
   if (filterType === "status") {
-    data.forEach(function(row) {
-      if (row[3] === filterValue) filtered.push(row);
-    });
+    filtered = data.filter(function(r){ return r[3] === filterValue; });
   } else if (filterType === "cellgroup") {
-    data.forEach(function(row) {
-      if (row[4] === filterValue) filtered.push(row);
-    });
+    filtered = data.filter(function(r){ return r[4] === filterValue; });
   } else if (filterType === "ministry") {
-    data.forEach(function(row) {
-      if (row[5] === filterValue) filtered.push(row);
-    });
+    filtered = data.filter(function(r){ return r[5] === filterValue; });
   } else if (filterType === "date") {
-    var sDate = new Date(startDate);
-    var eDate = new Date(endDate);
-    eDate.setHours(23,59,59,999);
-    data.forEach(function(row) {
-      var rowDate = new Date(row[2]);
-      if (!isNaN(rowDate) && rowDate >= sDate && rowDate <= eDate) {
-        filtered.push(row);
-      }
+    var s = new Date(startDate), e = new Date(endDate);
+    e.setHours(23,59,59,999);
+    filtered = data.filter(function(r){
+      var d = new Date(r[2]);
+      return !isNaN(d) && d >= s && d <= e;
     });
   } else {
     return "Invalid filter type.";
@@ -296,17 +363,13 @@ function extractPersonData(filterType, filterValue, startDate, endDate) {
   
   if (filtered.length === 0) return "No records match the selected criteria.";
   
-  var reportSpreadsheet = SpreadsheetApp.create("Person Data Extraction - " + new Date().toLocaleString());
-  var reportSheet = reportSpreadsheet.getActiveSheet();
-  reportSheet.appendRow(header);
-  filtered.forEach(function(row) {
-    reportSheet.appendRow(row);
-  });
+  var reportSS = SpreadsheetApp.create("Person Data Extraction - " + new Date().toLocaleString());
+  var reportSh = reportSS.getActiveSheet();
+  reportSh.appendRow(header);
+  filtered.forEach(function(r){ reportSh.appendRow(r); });
   
-  var file = DriveApp.getFileById(reportSpreadsheet.getId());
+  var file = DriveApp.getFileById(reportSS.getId());
   file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-  
-  var fileId = reportSpreadsheet.getId();
-  var downloadUrl = "https://docs.google.com/spreadsheets/d/" + fileId + "/export?format=xlsx";
-  return downloadUrl;
+  return "https://docs.google.com/spreadsheets/d/" 
+         + reportSS.getId() + "/export?format=xlsx";
 }
