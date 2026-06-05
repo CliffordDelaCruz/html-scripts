@@ -459,22 +459,38 @@ value;
         document.getElementById("yearContainer").style.display = reportType === "year" ? "block" : "none";
         document.getElementById("rangeContainer").style.display = reportType === "range" ? "block" : "none";
       }
-      function submitReport() {
-        var reportType = document.getElementById("reportType").value;
-        var year = document.getElementById("reportYear").value;
-        var startDate = document.getElementById("reportStartDate").value;
-        var endDate = document.getElementById("reportEndDate").value;
-        if(reportType === "year" && !year){
-          alert("Please enter a valid year.");
-          return;
-        }
-        if(reportType === "range" && (!startDate || !endDate)){
-          alert("Please select both start and end dates.");
-          return;
-        }
-        google.script.run.withSuccessHandler(reportDownloadUrl)
-          .generateReport(reportType, year, startDate, endDate);
+      
+      function downloadReport() {
+          const reportType = document.getElementById("reportType").value;
+          const year       = document.getElementById("reportYear").value;
+          const startDate  = document.getElementById("reportStartDate").value;
+          const endDate    = document.getElementById("reportEndDate").value;
+
+          if (reportType === "year" && !year) {
+              alert("Please enter a valid year.");
+              return;
+          }
+
+          if (reportType === "range" && (!startDate || !endDate)) {
+              alert("Please select both start and end dates.");
+              return;
+          }
+
+          google.script.run
+              .withSuccessHandler(function (url) {
+                  if (!url || url.startsWith("Error")) {
+                      alert(url);
+                      return;
+                  }
+
+                  // Open XLSX export URL in a new tab
+                  window.open(url, "_blank");
+              })
+              .withFailureHandler(err => alert("Error: " + err))
+              .generateReport(reportType, year, startDate, endDate);
       }
+
+
       function reportDownloadUrl(url) {
         if(url.indexOf("Error") > -1 || url.indexOf("No records") > -1){
           alert(url);
@@ -583,6 +599,21 @@ value;
           document.getElementById("extractDataForm").style.display = "none";
         }).extractPersonData(filterType, filterValue, startDate, endDate);
       }
+      // DOWNLOAD ATTENDEES 7 MONTHS
+      function downloadAttendeesLast7Months() {
+        google.script.run
+        .withSuccessHandler(function (url) {
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "Attendees_Last_7_Months.xlsx";
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        })
+        .withFailureHandler(err => alert("Error: " + err))
+        .getAttendeesLast7Months();
+      }
+
     </script>
   </head>
   <body>
@@ -592,6 +623,7 @@ value;
     <button onclick="searchAttendance()">Search</button>
     <button onclick="showReportForm()">Generate Report</button>
     <button onclick="showExtractDataForm()">Extract Person's Data</button>
+    <button onclick="downloadAttendeesLast7Months()" class="btn-report">Attendees (Last 7 Months)</button>
     <button id="scanQrButton" onclick="startQrScan()">Scan QR Code</button>
     <button id="stopQrButton" onclick="stopQrScan()" style="display:none;">Stop QR Scan</button>
     <div id="qr-reader" style="width:300px; margin-top:10px; display:none;"></div>
@@ -780,7 +812,7 @@ value;
         <input type="date" id="reportEndDate"><br><br>
       </div>
 
-      <button onclick="submitReport()">Download Report</button>
+      <button onclick="downloadReport()">Download Report</button>
       <button onclick="cancelReport()">Cancel</button>
     </div>
 

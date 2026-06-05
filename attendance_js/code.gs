@@ -286,6 +286,48 @@ function getMinistryList() {
               .map(function(r){ return r[0]; });
 }
 
+/** 
+ * Get Attendees for 7 months
+*/
+function getAttendeesLast7Months() {
+  const ss = SpreadsheetApp.getActive();
+  const sheet = ss.getSheetByName("Attendance_Table");
+
+  const data = sheet.getDataRange().getValues();
+  data.shift(); // remove header row
+
+  const today = new Date();
+  const sevenMonthsAgo = new Date();
+  sevenMonthsAgo.setMonth(today.getMonth() - 7);
+
+  // Filter rows within date range
+  const filtered = data.filter(row => {
+    const date = new Date(row[3]); // column D = Date_Attended
+    return date >= sevenMonthsAgo && date <= today;
+  });
+
+  // Extract unique names from column B (index 1)
+  const uniqueNames = [...new Set(filtered.map(row => row[1]))];
+
+  // Prepare export data
+  const exportData = [["Name"], ...uniqueNames.map(n => [n])];
+
+  // Create a temporary spreadsheet
+  const temp = SpreadsheetApp.create("Attendees_Last_7_Months");
+  const tempSheet = temp.getSheets()[0];
+
+  // Write data
+  tempSheet.getRange(1, 1, exportData.length, 1).setValues(exportData);
+
+  // Build direct XLSX export URL
+  const fileId = temp.getId();
+  const exportUrl = "https://docs.google.com/spreadsheets/d/" + fileId + "/export?format=xlsx";
+
+  return exportUrl;
+}
+
+
+
 /**
  * Generates an XLSX attendance report, filtered by year or date range.
  */
@@ -315,17 +357,26 @@ function generateReport(reportType, year, startDate, endDate) {
   
   if (filtered.length === 0) return "No records match the selected criteria.";
   
-  // Build & share a new spreadsheet
+  // Create report spreadsheet
   var reportSS = SpreadsheetApp.create("Attendance Report - " + new Date().toLocaleString());
   var reportSh = reportSS.getActiveSheet();
+  
+  // Write header + data
   reportSh.appendRow(sheet.getRange(1, 1, 1, 4).getValues()[0]);
   filtered.forEach(function(r){ reportSh.appendRow(r); });
   
+  // Force Google to finish writing
+  SpreadsheetApp.flush();
+  
+  // Share file
   var file = DriveApp.getFileById(reportSS.getId());
   file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+  // Return direct XLSX export URL
   return "https://docs.google.com/spreadsheets/d/" 
          + reportSS.getId() + "/export?format=xlsx";
 }
+
 
 /**
  * Extracts person data from Person_Master by various filters.
